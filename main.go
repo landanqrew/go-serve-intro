@@ -1,17 +1,24 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/joho/godotenv"
+	"github.com/landanqrew/go-serve-intro/internal/database"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	dbQueries *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -48,14 +55,27 @@ func generateAdminMetricsHTML(hits int32) string {
 }
 
 func main() {
+	err := godotenv.Load("./secrets/db_config.env")
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
 	mux := &http.ServeMux{}
 	cfg := apiConfig{
 		fileserverHits: atomic.Int32{},
+		dbQueries: database.New(db),
 	}
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: mux,
 	}
+	
 
 	fmt.Printf("Starting server on port %s\n", server.Addr)
 
@@ -82,7 +102,7 @@ func main() {
 	})
 
 
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		log.Fatal(err)
 	}
