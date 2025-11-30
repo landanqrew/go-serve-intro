@@ -11,21 +11,23 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, created_at, updated_at, email)
+INSERT INTO users (id, created_at, updated_at, email, hashed_password)
 VALUES (
     $1,
     $2,
     $3,
-    $4
+    $4,
+    $5
 )
-RETURNING id, created_at, updated_at, email
+RETURNING id, created_at, updated_at, email, hashed_password
 `
 
 type CreateUserParams struct {
-	ID        string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Email     string
+	ID             string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	Email          string
+	HashedPassword string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -34,6 +36,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.Email,
+		arg.HashedPassword,
 	)
 	var i User
 	err := row.Scan(
@@ -41,6 +44,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
+		&i.HashedPassword,
 	)
 	return i, err
 }
@@ -63,18 +67,96 @@ func (q *Queries) DeleteUser(ctx context.Context, id string) error {
 	return err
 }
 
-const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, created_at, updated_at, email FROM users WHERE email = $1 LIMIT 1
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
+func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByID, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
+		&i.HashedPassword,
+	)
+	return i, err
+}
+
+const getUsersByEmail = `-- name: GetUsersByEmail :many
+SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email = $1
+`
+
+func (q *Queries) GetUsersByEmail(ctx context.Context, email string) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, getUsersByEmail, email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Email,
+			&i.HashedPassword,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateUserPasswordByEmail = `-- name: UpdateUserPasswordByEmail :one
+UPDATE users SET hashed_password = $2 WHERE email = $1 RETURNING id, created_at, updated_at, email, hashed_password
+`
+
+type UpdateUserPasswordByEmailParams struct {
+	Email          string
+	HashedPassword string
+}
+
+func (q *Queries) UpdateUserPasswordByEmail(ctx context.Context, arg UpdateUserPasswordByEmailParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserPasswordByEmail, arg.Email, arg.HashedPassword)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.HashedPassword,
+	)
+	return i, err
+}
+
+const updateUserPasswordByID = `-- name: UpdateUserPasswordByID :one
+UPDATE users SET hashed_password = $2 WHERE id = $1 RETURNING id, created_at, updated_at, email, hashed_password
+`
+
+type UpdateUserPasswordByIDParams struct {
+	ID             string
+	HashedPassword string
+}
+
+func (q *Queries) UpdateUserPasswordByID(ctx context.Context, arg UpdateUserPasswordByIDParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserPasswordByID, arg.ID, arg.HashedPassword)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.HashedPassword,
 	)
 	return i, err
 }

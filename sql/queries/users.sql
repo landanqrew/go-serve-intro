@@ -1,10 +1,11 @@
 -- name: CreateUser :one
-INSERT INTO users (id, created_at, updated_at, email)
+INSERT INTO users (id, created_at, updated_at, email, hashed_password)
 VALUES (
     $1,
     $2,
     $3,
-    $4
+    $4,
+    $5
 )
 RETURNING *;
 
@@ -14,5 +15,14 @@ DELETE FROM users WHERE id = $1;
 -- name: DeleteAllUsers :exec
 DELETE FROM users WHERE 1=1;
 
--- name: GetUserByEmail :one
-SELECT * FROM users WHERE email = $1 LIMIT 1;
+-- name: GetUsersByEmail :many
+SELECT * FROM users WHERE email = $1;
+
+-- name: GetUserByID :one
+SELECT * FROM users WHERE id = $1 LIMIT 1;
+
+-- name: UpdateUserPasswordByID :one
+UPDATE users SET hashed_password = $2 WHERE id = $1 RETURNING *;
+
+-- name: UpdateUserPasswordByEmail :one
+UPDATE users SET hashed_password = $2 WHERE email = $1 RETURNING *;
