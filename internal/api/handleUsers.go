@@ -18,6 +18,23 @@ type userResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email string `json:"email"`
+	Token string `json:"token,omitempty"`
+}
+
+type jsonReadError struct {
+	Error string `json:"error"`
+}
+type databaseError struct {
+	Error string `json:"error"`
+}
+type unauthorizedError struct {
+	Error string `json:"error"`
+}
+type hashError struct {
+	Error string `json:"error"`
+}
+type jwtError struct {
+	Error string `json:"error"`
 }
 
 func (cfg *APIConfig) HandleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -89,15 +106,6 @@ func (cfg *APIConfig) HandleUpdateUserPassword(w http.ResponseWriter, r *http.Re
 		ID string `json:"id"`
 		Password string `json:"password"`
 	}
-	type jsonReadError struct {
-		Error string `json:"error"`
-	}
-	type databaseError struct {
-		Error string `json:"error"`
-	}
-	type hashError struct {
-		Error string `json:"error"`
-	}
 	params, err := deriveResponseJson[updateUserPasswordParams](w, r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -148,18 +156,6 @@ func (cfg *APIConfig) HandleAuthenticateUser(w http.ResponseWriter, r *http.Requ
 		Password string `json:"password"`
 		ExpiresInSeconds int `json:"expires_in_seconds,omitempty"`
 	}
-	type jsonReadError struct {
-		Error string `json:"error"`
-	}
-	type databaseError struct {
-		Error string `json:"error"`
-	}
-	type unauthorizedError struct {
-		Error string `json:"error"`
-	}
-	type hashError struct {
-		Error string `json:"error"`
-	}
 	params, err := deriveResponseJson[authenticateUserParams](w, r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -172,7 +168,7 @@ func (cfg *APIConfig) HandleAuthenticateUser(w http.ResponseWriter, r *http.Requ
 	if params.ExpiresInSeconds == 0 {
 		params.ExpiresInSeconds = 3600
 	}
-	
+
 	users, err := cfg.dbQueries.GetUsersByEmail(r.Context(), params.Email)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -200,6 +196,15 @@ func (cfg *APIConfig) HandleAuthenticateUser(w http.ResponseWriter, r *http.Requ
 		}
 		if same {
 			// authorized
+			// create JWT
+			token, err := auth.MakeJWT(uuid.MustParse(user.ID), cfg.tokenSecret, time.Duration(params.ExpiresInSeconds)*time.Second)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Header().Set("Content-Type", "application/json")
+				jsonResponse, _ := json.Marshal(jwtError{Error: err.Error()})
+				w.Write(jsonResponse)
+				return
+			}
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/json")
 			userResponse := userResponse{
@@ -207,6 +212,7 @@ func (cfg *APIConfig) HandleAuthenticateUser(w http.ResponseWriter, r *http.Requ
 				CreatedAt: user.CreatedAt,
 				UpdatedAt: user.UpdatedAt,
 				Email: user.Email,
+				Token: token,
 			}
 			res, _ := json.Marshal(userResponse)
 			w.Write(res)

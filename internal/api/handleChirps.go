@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/landanqrew/go-serve-intro/internal/auth"
 	"github.com/landanqrew/go-serve-intro/internal/database"
 )
 
@@ -110,8 +111,34 @@ func (cfg *APIConfig) HandleGetChirpByID(w http.ResponseWriter, r *http.Request)
 func (cfg *APIConfig) HandleCreateChirp(w http.ResponseWriter, r *http.Request) {
 	type ValidChirpRequest struct {
 		Body   string `json:"body"`
-		UserID string `json:"user_id"`
 	}
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		jsonResponse, _ := json.Marshal(jwtError{Error: err.Error()})
+		w.Write(jsonResponse)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(bearerToken, cfg.tokenSecret)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		jsonResponse, _ := json.Marshal(jwtError{Error: err.Error()})
+		w.Write(jsonResponse)
+		return
+	}
+	fmt.Println("userID [HandleCreateChirp]:\n", userID)
+	if userID == uuid.Nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		jsonResponse, _ := json.Marshal(jwtError{Error: "Invalid token"})
+		w.Write(jsonResponse)
+		return
+	}
+
+	userIDString := userID.String()
 
 	// validate content type
 	postBody := &ValidChirpRequest{}
@@ -157,7 +184,7 @@ func (cfg *APIConfig) HandleCreateChirp(w http.ResponseWriter, r *http.Request) 
 	cleanedBody := cleanChirpBody(postBody.Body)
 
 	// check if user exists
-	userExists, err := cfg.checkUserExists(postBody.UserID)
+	userExists, err := cfg.checkUserExists(userIDString)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
@@ -179,7 +206,7 @@ func (cfg *APIConfig) HandleCreateChirp(w http.ResponseWriter, r *http.Request) 
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		Body:      cleanedBody,
-		UserID:    postBody.UserID,
+		UserID:    userIDString,
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
