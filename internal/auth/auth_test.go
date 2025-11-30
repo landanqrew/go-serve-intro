@@ -120,3 +120,11 @@ func TestGetInvalidBearerToken(t *testing.T) {
 		t.Fatalf("Expected error getting bearer token, got nil")
 	}
 }
+
+func TestMakeRefreshToken(t *testing.T) {
+	token, err := MakeRefreshToken()
+	if err != nil {
+		t.Fatalf("Error making refresh token: %v", err)
+	}
+	fmt.Println("token [TestMakeRefreshToken]:\n", token)
+}

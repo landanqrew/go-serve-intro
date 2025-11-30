@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -80,4 +82,17 @@ func GetBearerToken(headers http.Header) (string, error) {
 		return "", errors.New("empty bearer token")
 	}
 	return trimmedToken, nil
+}
+
+func MakeRefreshToken() (string, error) {
+	byteSequence := make([]byte, 32)
+	res, err := rand.Read(byteSequence)
+	if err != nil {
+		return "", err
+	}
+	if res != len(byteSequence) {
+		return "", errors.New("failed to read random bytes")
+	}
+	base64Encoded := base64.URLEncoding.EncodeToString(byteSequence)
+	return base64Encoded, nil
 }
