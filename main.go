@@ -73,14 +73,23 @@ func main() {
 	mux.HandleFunc("PUT /api/chirps", func(w http.ResponseWriter, r *http.Request) {
 		cfg.HandleUpdateChirp(w, r)
 	})
-	mux.HandleFunc("DELETE /api/chirps", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("DELETE /api/chirps/{chirp_id}", func(w http.ResponseWriter, r *http.Request) {
 		cfg.HandleDeleteChirp(w, r)
 	})
 	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, r *http.Request) {
 		cfg.HandleCreateUser(w, r)
 	})
+	mux.HandleFunc("PUT /api/users", func(w http.ResponseWriter, r *http.Request) {
+		cfg.HandleUpdateUser(w, r)
+	})
 	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
 		cfg.HandleAuthenticateUser(w, r)
+	})
+	mux.HandleFunc("POST /api/refresh", func(w http.ResponseWriter, r *http.Request) {
+		cfg.HandleTokenRefresh(w, r)
+	})
+	mux.HandleFunc("POST /api/revoke", func(w http.ResponseWriter, r *http.Request) {
+		cfg.HandleTokenRevoke(w, r)
 	})
 	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -99,6 +108,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("OK"))
+	})
+	mux.HandleFunc("POST /api/polka/webhooks", func(w http.ResponseWriter, r *http.Request) {
+		cfg.HandleUpdateUserSetChirpyRed(w, r)
 	})
 
 	err = server.ListenAndServe()

@@ -30,6 +30,10 @@ type CompleteChirp struct {
 	UserID string `json:"user_id"`
 }
 
+type SuccessMessage struct {
+	Message string `json:"message"`
+}
+
 
 func (cfg *APIConfig) HandleChirpRequest(w http.ResponseWriter, r *http.Request) {
 	method := r.Method
@@ -323,43 +327,61 @@ func (cfg *APIConfig) HandleUpdateChirp(w http.ResponseWriter, r *http.Request) 
 }
 
 func (cfg *APIConfig) HandleDeleteChirp(w http.ResponseWriter, r *http.Request) {
-	type ValidChirpRequest struct {
-		ID string `json:"id"`
-	}
-
-	// validate content type
-	postBody := &ValidChirpRequest{}
-	if r.Header.Get("Content-Type") != "application/json" {
-		w.WriteHeader(http.StatusBadRequest)
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
 		w.Header().Set("Content-Type", "application/json")
-		jsonResponse, _ := json.Marshal(ChirpError{Error: "Content-Type must be application/json"})
+		jsonResponse, _ := json.Marshal(jwtError{Error: err.Error()})
 		w.Write(jsonResponse)
 		return
 	}
 
-	// read request body
-	bodyBytes, err := io.ReadAll(r.Body)
-	defer r.Body.Close()
+	userID, err := auth.ValidateJWT(bearerToken, cfg.tokenSecret)
 	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		jsonResponse, _ := json.Marshal(jwtError{Error: err.Error()})
+		w.Write(jsonResponse)
+		return
+	}
+	if userID == uuid.Nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		jsonResponse, _ := json.Marshal(jwtError{Error: "Invalid token"})
+		w.Write(jsonResponse)
+		return
+	}
+	userIDString := userID.String()
+
+	path := r.URL.Path
+	id := strings.TrimSpace(strings.Split(path, "/")[len(strings.Split(path, "/")) - 1])
+	// fmt.Println("id:", id)
+	chirp, err := cfg.dbQueries.GetChirpByID(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			w.Header().Set("Content-Type", "application/json")
+			jsonResponse, _ := json.Marshal(ChirpError{Error: "Chirp not found"})
+			w.Write(jsonResponse)
+			return
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
-		jsonResponse, _ := json.Marshal(ChirpError{Error: "Could not read request body"})
+		jsonResponse, _ := json.Marshal(ChirpError{Error: fmt.Sprintf("Error getting chirp by id: %v", err)})
 		w.Write(jsonResponse)
 		return
 	}
 
-	// unmarshal request body
-	err = json.Unmarshal(bodyBytes, postBody)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+	if chirp.UserID != userIDString {
+		w.WriteHeader(http.StatusForbidden)
 		w.Header().Set("Content-Type", "application/json")
-		jsonResponse, _ := json.Marshal(ChirpError{Error: "Invalid JSON"})
+		jsonResponse, _ := json.Marshal(ChirpError{Error: "You are not authorized to delete this chirp"})
 		w.Write(jsonResponse)
 		return
 	}
 
 	// delete chirp
-	err = cfg.dbQueries.DeleteChirp(r.Context(), postBody.ID)
+	err = cfg.dbQueries.DeleteChirp(r.Context(), id)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
@@ -367,6 +389,11 @@ func (cfg *APIConfig) HandleDeleteChirp(w http.ResponseWriter, r *http.Request) 
 		w.Write(jsonResponse)
 		return
 	}
+	// return success message
+	w.WriteHeader(http.StatusNoContent) // 204
+	w.Header().Set("Content-Type", "application/json")
+	jsonResponse, _ := json.Marshal(SuccessMessage{Message: "Chirp deleted successfully"})
+	w.Write(jsonResponse)
 }
 
 func cleanChirpBody(body string) string {

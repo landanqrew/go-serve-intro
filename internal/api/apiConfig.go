@@ -15,6 +15,7 @@ type APIConfig struct {
 	fileserverHits atomic.Int32
 	dbQueries      *database.Queries
 	tokenSecret    string
+	polkaKey       string
 }
 
 func deriveResponseJson[T any](w http.ResponseWriter, r *http.Request) (T, error) {
@@ -39,6 +40,8 @@ func deriveResponseJson[T any](w http.ResponseWriter, r *http.Request) (T, error
 
 	err := json.NewDecoder(r.Body).Decode(&t)
 	if err != nil {
+		// fmt.Printf("error for json body: %s\n", string(bodyBytes))
+		// fmt.Printf("cannot decode json to type %T: %v\n", t, err)
 		w.WriteHeader(http.StatusBadRequest)
 		w.Header().Set("ContentType", "application/json")
 		readError := jsonReadError{Error: fmt.Sprintf("error decoding json: %v", err)}
@@ -61,5 +64,6 @@ func GetAPIConfig(db *sql.DB) *APIConfig {
 		fileserverHits: atomic.Int32{},
 		dbQueries:      database.New(db),
 		tokenSecret:    os.Getenv("TOKEN_SECRET"),
+		polkaKey:       os.Getenv("POLKA_KEY"),
 	}
 }
