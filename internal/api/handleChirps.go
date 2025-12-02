@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,17 +24,31 @@ type ValidatedChirpResponse struct {
 }
 
 type CompleteChirp struct {
-	ID string `json:"id"`
+	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Body string `json:"body"`
-	UserID string `json:"user_id"`
+	Body      string    `json:"body"`
+	UserID    string    `json:"user_id"`
 }
 
 type SuccessMessage struct {
 	Message string `json:"message"`
 }
 
+// sortChirpsByCreatedAt sorts chirps by CreatedAt field
+// sortOrder can be "asc" or "desc", defaults to "asc" if invalid
+func sortChirpsByCreatedAt(chirps []CompleteChirp, sortOrder string) {
+	if sortOrder == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		})
+	} else {
+		// default to ascending order
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.Before(chirps[j].CreatedAt)
+		})
+	}
+}
 
 func (cfg *APIConfig) HandleChirpRequest(w http.ResponseWriter, r *http.Request) {
 	method := r.Method
@@ -53,6 +68,13 @@ func (cfg *APIConfig) HandleChirpRequest(w http.ResponseWriter, r *http.Request)
 }
 
 func (cfg *APIConfig) HandleGetAllChirps(w http.ResponseWriter, r *http.Request) {
+	// query params
+	authorID := r.URL.Query().Get("author_id")
+	sortOrder := r.URL.Query().Get("sort")
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "asc"
+	}
+
 	chirps, err := cfg.dbQueries.GetAllChirps(r.Context())
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -65,16 +87,29 @@ func (cfg *APIConfig) HandleGetAllChirps(w http.ResponseWriter, r *http.Request)
 	// return all chirps
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	responseChirps := make([]CompleteChirp, len(chirps))
-	for i, chirp := range chirps {
-		responseChirps[i] = CompleteChirp{
+	responseChirps := []CompleteChirp{}
+	for _, chirp := range chirps {
+		if authorID != "" && (chirp.UserID != authorID || chirp.UserID == "") {
+			continue
+		}
+		responseChirps = append(responseChirps, CompleteChirp{
 			ID:        chirp.ID,
 			CreatedAt: chirp.CreatedAt,
 			UpdatedAt: chirp.UpdatedAt,
 			Body:      chirp.Body,
 			UserID:    chirp.UserID,
-		}
+		})
 	}
+	// sort chirps by created_at (asc by default, desc if sort_order is desc)
+	if sortOrder == "desc" {
+		// fmt.Println("sorting chirps in descending order")
+		// fmt.Printf("before: responseChirps: %+v\n", responseChirps)
+		sort.Slice(responseChirps, func(i, j int) bool {
+			return responseChirps[i].CreatedAt.After(responseChirps[j].CreatedAt)
+		})
+		// fmt.Printf("after: responseChirps: %+v\n", responseChirps)
+	}
+	// sortChirpsByCreatedAt(responseChirps, sortOrder)
 	responseChirpsJSON, _ := json.Marshal(responseChirps)
 	w.Write(responseChirpsJSON)
 
@@ -83,7 +118,7 @@ func (cfg *APIConfig) HandleGetAllChirps(w http.ResponseWriter, r *http.Request)
 func (cfg *APIConfig) HandleGetChirpByID(w http.ResponseWriter, r *http.Request) {
 	// return chirp by id
 	path := r.URL.Path
-	id := strings.Split(path, "/")[len(strings.Split(path, "/")) - 1]
+	id := strings.Split(path, "/")[len(strings.Split(path, "/"))-1]
 	// fmt.Println("id:", id)
 	chirp, err := cfg.dbQueries.GetChirpByID(r.Context(), id)
 	if err != nil {
@@ -114,7 +149,7 @@ func (cfg *APIConfig) HandleGetChirpByID(w http.ResponseWriter, r *http.Request)
 
 func (cfg *APIConfig) HandleCreateChirp(w http.ResponseWriter, r *http.Request) {
 	type ValidChirpRequest struct {
-		Body   string `json:"body"`
+		Body string `json:"body"`
 	}
 	bearerToken, err := auth.GetBearerToken(r.Header)
 	if err != nil {
@@ -183,7 +218,7 @@ func (cfg *APIConfig) HandleCreateChirp(w http.ResponseWriter, r *http.Request) 
 		w.Write(jsonResponse)
 		return
 	}
-  
+
 	// clean chirp body
 	cleanedBody := cleanChirpBody(postBody.Body)
 
@@ -235,10 +270,10 @@ func (cfg *APIConfig) HandleCreateChirp(w http.ResponseWriter, r *http.Request) 
 
 func (cfg *APIConfig) HandleUpdateChirp(w http.ResponseWriter, r *http.Request) {
 	type ValidChirpRequest struct {
-		ID string `json:"id"`
+		ID   string `json:"id"`
 		Body string `json:"body"`
 	}
-	
+
 	// validate content type
 	postBody := &ValidChirpRequest{}
 	if r.Header.Get("Content-Type") != "application/json" {
@@ -248,7 +283,7 @@ func (cfg *APIConfig) HandleUpdateChirp(w http.ResponseWriter, r *http.Request) 
 		w.Write(jsonResponse)
 		return
 	}
-	
+
 	// read request body
 	bodyBytes, err := io.ReadAll(r.Body)
 	defer r.Body.Close()
@@ -354,7 +389,7 @@ func (cfg *APIConfig) HandleDeleteChirp(w http.ResponseWriter, r *http.Request) 
 	userIDString := userID.String()
 
 	path := r.URL.Path
-	id := strings.TrimSpace(strings.Split(path, "/")[len(strings.Split(path, "/")) - 1])
+	id := strings.TrimSpace(strings.Split(path, "/")[len(strings.Split(path, "/"))-1])
 	// fmt.Println("id:", id)
 	chirp, err := cfg.dbQueries.GetChirpByID(r.Context(), id)
 	if err != nil {
@@ -416,8 +451,8 @@ func cleanChirpBody(body string) string {
 func (cfg *APIConfig) ValidateChirpRequest(w http.ResponseWriter, r *http.Request) {
 	type ValidChirpRequest struct {
 		Body string `json:"body"`
-	}	
-	
+	}
+
 	postBody := &ValidChirpRequest{}
 	if r.Header.Get("Content-Type") != "application/json" {
 		w.WriteHeader(http.StatusBadRequest)
