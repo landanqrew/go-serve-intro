@@ -120,4 +120,3 @@ func TestSortChirpsByCreatedAt(t *testing.T) {
 		})
 	}
 }
-
